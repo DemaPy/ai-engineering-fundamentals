@@ -4,6 +4,42 @@ Welcome to AI Engineering Fundamentals. In this course you will build an intelli
 
 This first lesson is about understanding what an AI Engineer does, orienting yourself in the codebase, and getting your environment set up so you are ready to start building.
 
+## What We Are Building
+
+We are building an **AI powered diagram design tool**. You start with a fully functional Excalidraw canvas and a chat sidebar. Over the course of 12 lessons, you will turn that chat sidebar into an intelligent agent that can create, modify, and reason about diagrams on the canvas.
+
+The app is built on **Cloudflare Workers** with the **Agents SDK** for the backend, and **React** with **Excalidraw** for the frontend. Everything runs locally on your machine. No deployment or cloud account needed.
+
+Here is the progression:
+
+1. **Lessons 1 through 5**: Build the agent, wire up the chat, and establish evals so you have a working baseline to improve against
+2. **Lessons 6 through 12**: Systematically improve the agent using context engineering, better tools, RAG, generative UI, human in the loop flows, planning mode, and data flywheels. Every improvement is measured with evals.
+
+By the end you will have a working agentic application AND the professional discipline to keep improving it.
+
+## How This Course Works
+
+### Branches
+
+Each lesson has its own git branch. The branch for lesson N contains the completed solution for lesson N minus one. So if you fall behind or get stuck, you can always check out the next lesson's branch to catch up:
+
+```bash
+# If you're stuck on lesson 3, jump to the lesson 4 branch
+# which has the lesson 3 solution already done
+git checkout lesson-4
+npm install
+```
+
+The `main` branch contains the final version with all lessons completed.
+
+### Using AI to Help You
+
+Each lesson includes markdown notes (like the one you are reading now) with all the theory and complete code blocks for every change. You can use these notes together with a coding agent like Claude Code, Cursor, or Copilot to help you work through the exercises.
+
+For example, you could paste the lesson notes into your agent and say "help me implement this lesson" or point it at the specific code blocks you are stuck on. The notes are written to be both human readable and useful as context for an AI coding assistant.
+
+You can also run `npm run docs` to view these notes as a formatted website locally.
+
 ## What is an AI Engineer?
 
 An AI Engineer is a **system builder**. You take foundation models (like Claude, GPT, etc.) and turn them into dependable product features. This is different from ML Engineering, where the focus is on training models, managing datasets, and optimizing model performance. As an AI Engineer, you treat the model as a given and focus on everything around it:
