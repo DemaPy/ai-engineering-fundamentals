@@ -39,7 +39,7 @@ The dashboard URL prints in the terminal after every eval run. Click it and you'
 ### Install
 
 ```bash
-npm install --save-dev braintrust autoevals
+npm install --save-dev braintrust autoevals dotenv dotenv-cli
 ```
 
 ### Update `.dev.vars.example`
@@ -217,8 +217,8 @@ The whole eval in one file. This is where Braintrust's `Eval()` ties everything 
 
 ```ts
 import { readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
+import { config } from "dotenv";
 import { Eval } from "braintrust";
 import { Factuality } from "autoevals";
 import { generateText, stepCountIs } from "ai";
@@ -229,30 +229,9 @@ import { SYSTEM_PROMPT } from "../src/system-prompt";
 import { schemaScorer, type AgentOutput } from "./scorers/schema";
 import { structureScorer } from "./scorers/structure";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const ROOT = join(__dirname, "..");
-
-// Load OPENAI_API_KEY and BRAINTRUST_API_KEY from .dev.vars
-function loadDevVars(): Record<string, string> {
-  try {
-    const content = readFileSync(join(ROOT, ".dev.vars"), "utf-8");
-    const vars: Record<string, string> = {};
-    for (const line of content.split("\n")) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith("#")) continue;
-      const [key, ...rest] = trimmed.split("=");
-      if (key) vars[key.trim()] = rest.join("=").trim();
-    }
-    return vars;
-  } catch {
-    return {};
-  }
-}
-
-const devVars = loadDevVars();
-for (const [k, v] of Object.entries(devVars)) {
-  if (!process.env[k]) process.env[k] = v;
-}
+// Load env vars from .dev.vars (npm run eval also wraps this with dotenv-cli
+// so braintrust sees BRAINTRUST_API_KEY before it boots).
+config({ path: ".dev.vars" });
 
 const openai = createOpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -264,8 +243,9 @@ interface GoldenTestCase {
   category: string;
 }
 
-const goldenPath = join(ROOT, "evals/datasets/golden.json");
-const testCases: GoldenTestCase[] = JSON.parse(readFileSync(goldenPath, "utf-8"));
+const testCases: GoldenTestCase[] = JSON.parse(
+  readFileSync(join("evals", "datasets", "golden.json"), "utf-8")
+);
 
 Eval<string, AgentOutput, string[]>("Diagram Agent", {
   // Map our golden dataset onto Braintrust's expected shape.
@@ -325,9 +305,11 @@ Replace the old `eval` script:
 
 ```json
 "scripts": {
-  "eval": "braintrust eval evals/diagram.eval.ts"
+  "eval": "dotenv -e .dev.vars -- braintrust eval evals/diagram.eval.ts"
 }
 ```
+
+We wrap the command in `dotenv -e .dev.vars --` because the `braintrust eval` CLI checks for `BRAINTRUST_API_KEY` in the environment **before** it loads our eval file. By the time `dotenv` inside our file runs, braintrust has already errored. The `dotenv-cli` package handles the loading earlier in the chain so braintrust sees the keys when it boots. The `dotenv` import inside the file is still useful as a safety net if you ever run the file directly with `tsx` or similar.
 
 ### Delete the old harness
 
