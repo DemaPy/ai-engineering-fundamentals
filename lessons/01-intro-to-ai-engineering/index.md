@@ -104,7 +104,7 @@ Here is what the codebase looks like and what each piece does:
 │   │   ├── gen-ui/            # Generative UI registry
 │   │   └── hitl/              # Human in the loop components
 ├── lessons/                   # Course notes (you are here)
-├── evals/                     # Evaluation datasets and scorers (added later)
+├── evals/                     # Eval dataset (golden.json is pre populated, scorers added in lesson 5)
 ├── wrangler.toml              # Cloudflare Workers config
 ├── vite.config.ts             # Vite + Cloudflare plugin config
 ├── package.json               # Dependencies and scripts
