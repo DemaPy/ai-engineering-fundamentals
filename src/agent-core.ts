@@ -73,15 +73,6 @@ function buildSystem(base: string, canvasState: unknown[] | undefined): string {
   return `${base}\n\n# Current canvas state\n\n${serializeCanvasState(canvasState ?? [])}`;
 }
 
-// OpenAI's strict tool calling mode requires every property in a tool input
-// schema to be in `required` and rejects optional fields. Our modifyDiagram
-// tool intentionally has many optional update fields (you only set what you
-// want to change), so we turn strict mode off for tool schemas. We still
-// validate the model's output locally via Zod.
-const PROVIDER_OPTIONS = {
-  openai: { strictJsonSchema: false },
-};
-
 // Streaming variant. Used by the worker for the live chat experience.
 export function streamAgent({
   model,
@@ -96,7 +87,6 @@ export function streamAgent({
     messages,
     tools,
     stopWhen: stepCountIs(maxSteps),
-    providerOptions: PROVIDER_OPTIONS,
   });
 }
 
@@ -115,7 +105,6 @@ export async function runAgent({
     messages,
     tools,
     stopWhen: stepCountIs(maxSteps),
-    providerOptions: PROVIDER_OPTIONS,
   });
   return {
     text: result.text,
