@@ -464,7 +464,9 @@ This is the workflow you want for the rest of the course. Each improvement lesso
 
 ## Reading your first real baseline
 
-Your numbers will vary, but the shape should look something like:
+**Your numbers will not match mine exactly, and that's fine.** LLMs are non-deterministic at temperature > 0, model versions drift over time, and there's run-to-run variance even on the same code. What matters is the **shape** of the baseline and the **direction** scores move when you change things in later lessons. Don't fixate on hitting specific digits.
+
+That said, the shape should look something like this:
 
 ```
 Schema:        90s    (mostly valid, occasional shape failures on hard cases)
@@ -473,7 +475,9 @@ Structure:    ~60     (counts often off on medium and hard cases)
 Preservation: ~25     (modify cases mostly fail — agent has no canvas state)
 ```
 
-The 25 percent on Preservation is the headline. It is **not a bug**. The agent has no idea what's on the canvas — the only context it has is the fake message history we constructed. Real production behavior post lesson 6 (where canvas state gets serialized into the system prompt) should bring this much closer to 1.
+The Preservation number is the headline. It is **not a bug**. The agent has no idea what's on the canvas — there's literally no canvas state in its context yet. Lesson 6 fixes that and you should see Preservation jump significantly.
+
+If your shape is wildly different (e.g., Schema in the 50s, Preservation at 80) then something's actually wrong — recheck the dataset loaded, the scorers, and that you're running against `gpt-5.4-mini`.
 
 Specifically, here's where you'd expect each lesson to lift things:
 
