@@ -7,22 +7,27 @@ import {
   generateText,
   streamText,
   stepCountIs,
+  tool,
   type LanguageModel,
   type ModelMessage,
 } from "ai";
-import { tools } from "./tools";
+import { z } from "zod";
+import { buildTools } from "./tools";
 import { serializeCanvasState } from "./context/canvas-state";
 
 export const SYSTEM_PROMPT = `# Role
 
 You are a diagram design assistant that controls an Excalidraw canvas. Your job is to translate the user's requests into precise tool calls that draw or modify shapes on the canvas. You are not a chat bot. You are a tool using agent that produces diagrams.
 
-# Capabilities
+# Tools
 
-You have two tools:
+You have these tools:
 
-- **generateDiagram(elements)** — produce a list of Excalidraw elements (rectangles, ellipses, diamonds, text, arrows, lines). Use this when the canvas is empty, when the user asks for something brand new, or when the existing diagram needs to be replaced from scratch.
-- **modifyDiagram(elementId, updates)** — change a single existing element by id. Use this when the user wants to recolor, rename, move, resize, or otherwise tweak something already on the canvas. The current canvas state (described below) tells you which element ids exist.
+- **queryCanvas()** — read the current contents of the canvas. ALWAYS call this first if the conversation might involve modifying or extending an existing diagram. Returns a summary of every element with id, type, position, and label. Cheap, do it whenever you're unsure what's there.
+- **addElements(elements)** — add new elements to the canvas. Use for creating diagrams or appending to existing ones.
+- **updateElements(updates)** — change properties of existing elements by id. Use for recoloring, repositioning, relabeling, resizing.
+- **removeElements(ids)** — delete elements by id.
+- **searchWeb(query)** — search the web for current information. Use this when the user asks about recent technology, frameworks, or systems where you may not have up to date knowledge. Search first, then draw.
 
 # Output constraints
 
@@ -32,9 +37,10 @@ Layout flows left to right for processes and top to bottom for hierarchies. Grou
 
 # Behavioral guidelines
 
-- **Use the canvas state.** If the canvas is non empty, the system message includes a summary of every element with its id and label. Never invent ids. Never call \`modifyDiagram\` on an id that isn't in the summary.
-- **Prefer modifyDiagram for tweaks.** If the user says "make the login box red," do not regenerate the whole canvas. Find \`rect_login\` in the canvas state and call \`modifyDiagram("rect_login", { backgroundColor: "#fa5252" })\`.
-- **Preserve what exists.** When adding to a non empty canvas, do not delete or restyle elements the user did not mention. Add new elements; leave the rest alone.
+- **Query before you modify.** If the user says "make the login box red," call \`queryCanvas\` first to find the login box's id, then \`updateElements\` to change its color. Never invent ids.
+- **Prefer updateElements for tweaks.** Don't redraw the whole diagram when one element changes.
+- **Preserve what exists.** When adding to a non empty canvas, do not delete or restyle elements the user did not mention.
+- **Search the web for fresh facts.** If the user asks about a system you might not know well (a specific framework's request lifecycle, a service's architecture), call \`searchWeb\` before drawing.
 - **Ask one clarifying question only if the request is genuinely ambiguous.** "Draw something" is ambiguous. "Draw a flowchart for user signup" is not — make reasonable choices and draw it.
 
 # Examples
@@ -43,117 +49,132 @@ Layout flows left to right for processes and top to bottom for hierarchies. Grou
 
 User: "draw a circle and a square next to each other"
 
-Call \`generateDiagram\` with two elements: an ellipse at \`(100, 100)\` 120x120 and a rectangle at \`(260, 100)\` 120x120. Reply: "Done — circle on the left, square on the right."
+Call \`addElements\` with two elements: an ellipse at \`(100, 100)\` 120x120 and a rectangle at \`(260, 100)\` 120x120. Reply: "Done — circle on the left, square on the right."
 
-**Example 2 — non empty canvas, recolor**
+**Example 2 — modify on existing canvas**
 
-Canvas state shows \`rect_login\` ("Login") and \`rect_db\` ("Database"). User: "make the login box red."
+User: "make the login box red."
 
-Call \`modifyDiagram("rect_login", { backgroundColor: "#fa5252" })\`. Reply: "Done — login box is now red."
+Call \`queryCanvas({})\` first. Find the rectangle whose label is "Login" (say its id is \`rect_login\`). Then call \`updateElements({ updates: [{ id: "rect_login", fields: { backgroundColor: "#fa5252", ...nulls } }] })\`. Reply: "Done — login box is now red."
 
-**Example 3 — non empty canvas, additive**
+**Example 3 — additive on existing canvas**
 
-Canvas state shows \`rect_api\` ("API") and \`rect_db\` ("Database"). User: "add a Cache box between them and route the API through the cache."
+User: "add a Cache box between the API and the Database and route the API through the cache."
 
-Call \`generateDiagram\` with one new rectangle \`rect_cache\` ("Cache") positioned between the two existing boxes, plus arrows from \`rect_api\` to \`rect_cache\` and from \`rect_cache\` to \`rect_db\`. Do not redraw \`rect_api\` or \`rect_db\` — they already exist. Reply: "Added the cache between API and Database."`;
+Call \`queryCanvas({})\`, locate \`rect_api\` and \`rect_db\`, then call \`addElements\` with one new rectangle \`rect_cache\` and two arrows. Do not redraw \`rect_api\` or \`rect_db\` — they already exist.`;
 
 interface AgentArgs {
   model: LanguageModel;
   messages: ModelMessage[];
-  // Current canvas state. Gets serialized and appended to the system prompt
-  // so the model knows what already exists. Pass `[]` (or omit) for an empty
-  // canvas. The worker reads this from the latest user message's
-  // data-canvas-state part. The eval passes `testCase.seed?.elements`.
-  canvasState?: unknown[];
+  // Eval-only: the simulated initial canvas. The worker doesn't pass this —
+  // in production the live browser canvas is the source of truth, fetched on
+  // demand via the queryCanvas client tool. The eval has no browser, so it
+  // simulates one by seeding from this value and answering queryCanvas calls
+  // inline against the simulated state.
+  seedCanvas?: unknown[];
   system?: string;
   maxSteps?: number;
-}
-
-function buildSystem(base: string, canvasState: unknown[] | undefined): string {
-  return `${base}\n\n# Current canvas state\n\n${serializeCanvasState(canvasState ?? [])}`;
+  env?: { TAVILY_API_KEY?: string };
 }
 
 // Streaming variant. Used by the worker for the live chat experience.
 export function streamAgent({
   model,
   messages,
-  canvasState,
   system = SYSTEM_PROMPT,
-  maxSteps = 5,
+  maxSteps = 8,
+  env = {},
 }: AgentArgs) {
   return streamText({
     model,
-    system: buildSystem(system, canvasState),
+    system,
     messages,
-    tools,
+    tools: buildTools(env),
     stopWhen: stepCountIs(maxSteps),
   });
 }
 
 // Non-streaming variant. Used by the eval harness so we can collect the full
-// result and pull out elements for scoring.
+// result and pull out elements for scoring. The eval needs queryCanvas to
+// return SOMETHING (otherwise the agent loop hangs), so we override it here
+// with an inline executor that reads from a mutable simulated canvas.
 export async function runAgent({
   model,
   messages,
-  canvasState,
+  seedCanvas = [],
   system = SYSTEM_PROMPT,
-  maxSteps = 5,
+  maxSteps = 8,
+  env = {},
 }: AgentArgs) {
+  // Mutable simulated canvas for the duration of this run. The eval has no
+  // browser, so we maintain this in memory and let the agent's tool calls
+  // mutate it. queryCanvas reads from it; addElements/updateElements/
+  // removeElements write to it.
+  const sim: Record<string, unknown>[] = (seedCanvas as Record<string, unknown>[]).map((el) => ({ ...el }));
+
+  // Build eval-only versions of every tool that needs to touch `sim`. We
+  // can't reuse the worker tool definitions because (a) queryCanvas has no
+  // execute on the worker (it's client-side) and (b) the worker mutators
+  // are passthroughs that don't actually update any canvas. Here, every
+  // tool both returns the canonical shape AND mirrors the change into sim.
+  const baseTools = buildTools(env);
+  const evalTools = {
+    addElements: tool({
+      description: baseTools.addElements.description,
+      inputSchema: baseTools.addElements.inputSchema as never,
+      execute: async ({ elements }: { elements: unknown[] }) => {
+        for (const el of elements) sim.push({ ...(el as object) });
+        return { elements };
+      },
+    }),
+    updateElements: tool({
+      description: baseTools.updateElements.description,
+      inputSchema: baseTools.updateElements.inputSchema as never,
+      execute: async ({ updates }: { updates: { id: string; fields: Record<string, unknown> }[] }) => {
+        const cleaned = updates.map(({ id, fields }) => {
+          const filtered: Record<string, unknown> = {};
+          for (const [key, value] of Object.entries(fields)) {
+            if (value !== null) filtered[key] = value;
+          }
+          return { id, fields: filtered };
+        });
+        for (const { id, fields } of cleaned) {
+          const target = sim.find((el) => el.id === id);
+          if (target) Object.assign(target, fields);
+        }
+        return { updates: cleaned };
+      },
+    }),
+    removeElements: tool({
+      description: baseTools.removeElements.description,
+      inputSchema: baseTools.removeElements.inputSchema as never,
+      execute: async ({ ids }: { ids: string[] }) => {
+        for (const id of ids) {
+          const idx = sim.findIndex((el) => el.id === id);
+          if (idx >= 0) sim.splice(idx, 1);
+        }
+        return { ids };
+      },
+    }),
+    queryCanvas: tool({
+      description: baseTools.queryCanvas.description,
+      inputSchema: z.object({}),
+      execute: async () => ({ summary: serializeCanvasState(sim) }),
+    }),
+    searchWeb: baseTools.searchWeb,
+  };
+
   const result = await generateText({
     model,
-    system: buildSystem(system, canvasState),
+    system,
     messages,
-    tools,
+    tools: evalTools,
     stopWhen: stepCountIs(maxSteps),
   });
+
   return {
     text: result.text,
-    elements: extractElements(result.steps, canvasState ?? []),
+    elements: sim,
     steps: result.steps,
   };
-}
-
-// Walk the agent's tool calls in order and simulate what the canvas would
-// look like after they were all applied. Starts from `initial` (the seed
-// canvas state for modify cases, or `[]` for create cases).
-//
-// - generateDiagram REPLACES the canvas with the new elements (matches the
-//   naive tool's behavior — it produces a full element list)
-// - modifyDiagram merges updates into the matching element by id
-//
-// This is what lets the eval's preservation scorer see whether the agent
-// actually preserved seed elements: it's the post-application state, not
-// just the raw tool outputs.
-interface StepLike {
-  toolResults?: {
-    toolName: string;
-    input?: unknown;
-    output: unknown;
-  }[];
-}
-
-export function extractElements(steps: StepLike[], initial: unknown[] = []): unknown[] {
-  let canvas: Record<string, unknown>[] = (initial as Record<string, unknown>[]).map((el) => ({ ...el }));
-
-  for (const step of steps) {
-    for (const toolResult of step.toolResults ?? []) {
-      if (toolResult.toolName === "generateDiagram") {
-        const output = toolResult.output as { elements?: unknown[] };
-        if (Array.isArray(output?.elements)) {
-          canvas = output.elements.map((el) => ({ ...(el as object) }));
-        }
-      } else if (toolResult.toolName === "modifyDiagram") {
-        const output = toolResult.output as {
-          elementId?: unknown;
-          updates?: Record<string, unknown>;
-        };
-        if (typeof output?.elementId === "string" && output.updates) {
-          const target = canvas.find((el) => el.id === output.elementId);
-          if (target) Object.assign(target, output.updates);
-        }
-      }
-    }
-  }
-
-  return canvas;
 }

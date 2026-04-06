@@ -44,7 +44,12 @@ Eval<GoldenTestCase, AgentOutput, GoldenTestCase>("Diagram Agent", {
     const result = await runAgent({
       model: openai("gpt-5.4-mini"),
       messages: buildMessages(testCase),
-      canvasState: testCase.seed?.elements ?? [],
+      // Eval simulates a browser canvas: the seed elements become the
+      // initial sim state, and queryCanvas is overridden inside runAgent to
+      // read from it. The worker doesn't pass this — it relies on the live
+      // browser via the queryCanvas client tool.
+      seedCanvas: testCase.seed?.elements ?? [],
+      env: { TAVILY_API_KEY: process.env.TAVILY_API_KEY },
     });
     return { text: result.text, elements: result.elements };
   },
