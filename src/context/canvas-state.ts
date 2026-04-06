@@ -11,11 +11,25 @@
 interface ElementLike {
   id?: unknown;
   type?: unknown;
+  x?: unknown;
+  y?: unknown;
+  width?: unknown;
+  height?: unknown;
   text?: unknown;
   label?: { text?: unknown };
   startBinding?: { elementId?: unknown };
   endBinding?: { elementId?: unknown };
   containerId?: unknown;
+}
+
+function fmtPos(el: ElementLike): string {
+  const x = typeof el.x === "number" ? Math.round(el.x) : null;
+  const y = typeof el.y === "number" ? Math.round(el.y) : null;
+  const w = typeof el.width === "number" ? Math.round(el.width) : null;
+  const h = typeof el.height === "number" ? Math.round(el.height) : null;
+  if (x === null || y === null) return "";
+  const size = w !== null && h !== null ? ` ${w}x${h}` : "";
+  return ` at (${x}, ${y})${size}`;
 }
 
 function getId(el: ElementLike): string | null {
@@ -87,10 +101,11 @@ export function serializeCanvasState(elements: unknown[]): string {
           : null;
       const from = fromId ? refById.get(fromId) ?? fromId : "(unbound)";
       const to = toId ? refById.get(toId) ?? toId : "(unbound)";
-      lines.push(`- ${type} ${id}: ${from} → ${to}`);
+      lines.push(`- ${type} ${id}: ${from} → ${to}${fmtPos(el)}`);
     } else {
       const label = getLabel(el);
-      lines.push(label ? `- ${type} ${id} "${label}"` : `- ${type} ${id}`);
+      const labelPart = label ? ` "${label}"` : "";
+      lines.push(`- ${type} ${id}${labelPart}${fmtPos(el)}`);
     }
   }
 
