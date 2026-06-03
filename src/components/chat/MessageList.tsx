@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { memo, useEffect, useRef } from "react";
 import type { UIMessage } from "ai";
 import MessageBubble from "./MessageBubble";
 
@@ -6,7 +6,7 @@ interface MessageListProps {
   messages: UIMessage[];
 }
 
-export default function MessageList({ messages }: MessageListProps) {
+export default memo(function MessageList({ messages }: MessageListProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   // Track whether the user was at (or near) the bottom before the last update
   // so we only auto scroll when they were already following along.
@@ -44,4 +44,4 @@ export default function MessageList({ messages }: MessageListProps) {
       ))}
     </div>
   );
-}
+})

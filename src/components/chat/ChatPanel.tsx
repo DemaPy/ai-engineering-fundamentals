@@ -14,7 +14,27 @@ export default function ChatPanel({
   sendMessage,
   status,
 }: ChatPanelProps) {
+
+  return (
+    <div className="chat-panel">
+      <ChatHeader />
+      <MessageList messages={messages} />
+      <ChatInput sendMessage={sendMessage} status={status} />
+    </div>
+  );
+}
+
+function ChatHeader() {
+  return (
+    <div className="chat-header">
+      <h2>Chat</h2>
+    </div>
+  );
+}
+
+function ChatInput({ sendMessage, status }: { sendMessage: (message: { role: "user"; parts: { type: "text"; text: string }[] }) => void; status: string }) {
   const [input, setInput] = useState("");
+  const isStreaming = status === "submitted" || status === "streaming";
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,31 +46,16 @@ export default function ChatPanel({
     setInput("");
   };
 
-  const isStreaming = status === "submitted" || status === "streaming";
-
   return (
-    <div className="chat-panel">
-      <div className="chat-header">
-        <h2>Chat</h2>
-      </div>
-      <MessageList messages={messages} />
-      <form className="chat-input-form" onSubmit={handleSubmit}>
-        <input
-          type="text"
-          className="chat-input"
-          placeholder="Describe a diagram..."
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          disabled={isStreaming}
-        />
-        <button
-          type="submit"
-          className="chat-send-btn"
-          disabled={isStreaming || !input.trim()}
-        >
-          {isStreaming ? "..." : "Send"}
-        </button>
-      </form>
-    </div>
+    <form className="chat-input-form" onSubmit={handleSubmit}>
+      <input
+        type="text"
+        className="chat-input"
+        placeholder="Describe a diagram..."
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+        disabled={isStreaming}
+      />
+    </form>
   );
 }
